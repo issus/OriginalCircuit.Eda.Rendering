@@ -208,6 +208,32 @@ public sealed class SkiaRenderContext : IRenderContext, IDisposable
     }
 
     /// <inheritdoc />
+    public void FillContours(IReadOnlyList<(double[] X, double[] Y)> contours, uint color)
+    {
+        if (contours == null || contours.Count == 0) return;
+
+        using var paint = new SKPaint
+        {
+            Color = ToColor(color),
+            IsAntialias = true,
+            Style = SKPaintStyle.Fill,
+        };
+
+        using var path = new SKPath { FillType = SKPathFillType.EvenOdd };
+        var any = false;
+        foreach (var (xs, ys) in contours)
+        {
+            if (xs == null || ys == null || xs.Length < 3 || xs.Length != ys.Length) continue;
+            path.MoveTo((float)xs[0], (float)ys[0]);
+            for (int i = 1; i < xs.Length; i++)
+                path.LineTo((float)xs[i], (float)ys[i]);
+            path.Close();
+            any = true;
+        }
+        if (any) _canvas.DrawPath(path, paint);
+    }
+
+    /// <inheritdoc />
     public void DrawPolyline(ReadOnlySpan<double> xPoints, ReadOnlySpan<double> yPoints, uint color, double width,
         LineStyle style = LineStyle.Solid)
     {

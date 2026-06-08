@@ -260,6 +260,30 @@ public sealed class SvgRenderContext : IRenderContext
     }
 
     /// <inheritdoc />
+    public void FillContours(IReadOnlyList<(double[] X, double[] Y)> contours, uint color)
+    {
+        if (contours == null || contours.Count == 0) return;
+
+        var sb = new StringBuilder();
+        foreach (var (xs, ys) in contours)
+        {
+            if (xs == null || ys == null || xs.Length < 3 || xs.Length != ys.Length) continue;
+            sb.Append('M').Append(Fmt(xs[0])).Append(' ').Append(Fmt(ys[0]));
+            for (int i = 1; i < xs.Length; i++)
+                sb.Append('L').Append(Fmt(xs[i])).Append(' ').Append(Fmt(ys[i]));
+            sb.Append('Z');
+        }
+        if (sb.Length == 0) return;
+
+        var el = new XElement("path",
+            new XAttribute("d", sb.ToString()),
+            new XAttribute("fill", ToSvgColor(color)),
+            new XAttribute("fill-rule", "evenodd"));
+        AddOpacity(el, color);
+        Append(el);
+    }
+
+    /// <inheritdoc />
     public void DrawPolyline(ReadOnlySpan<double> xPoints, ReadOnlySpan<double> yPoints, uint color, double width,
         LineStyle style = LineStyle.Solid)
     {
@@ -388,10 +412,36 @@ public sealed class SvgRenderContext : IRenderContext
     public TextMetrics MeasureText(string text, double fontSize, TextRenderOptions? options = null)
     {
         if (string.IsNullOrEmpty(text)) return new TextMetrics(0, 0);
-        var width = text.Length * fontSize * 0.6;
-        var height = fontSize * 1.2;
+
+        // SVG has no font engine here, so estimate from per-character advance widths
+        // (Helvetica/Arial AFM metrics) rather than a flat average — far better for
+        // word-wrap, centering and overline placement.
+        double emWidth = 0;
+        foreach (var ch in text)
+            emWidth += AdvanceWidthEm(ch);
+
+        var boldFactor = options?.Bold == true ? 1.06 : 1.0;
+        var width = emWidth * fontSize * boldFactor;
+        var height = fontSize * 1.16; // ~ascent+descent for Arial
         return new TextMetrics(width, height);
     }
+
+    private static double AdvanceWidthEm(char c)
+    {
+        if (c >= 32 && c <= 126) return HelveticaWidths[c - 32] / 1000.0;
+        return 0.5; // reasonable fallback for non-ASCII
+    }
+
+    // Helvetica/Arial advance widths (per-1000 em) for printable ASCII 32..126.
+    private static readonly short[] HelveticaWidths =
+    {
+        278, 278, 355, 556, 556, 889, 667, 191, 333, 333, 389, 584, 278, 333, 278, 278,
+        556, 556, 556, 556, 556, 556, 556, 556, 556, 556, 278, 278, 584, 584, 584, 556,
+        1015, 667, 667, 722, 722, 667, 611, 778, 722, 278, 500, 667, 556, 833, 722, 778,
+        667, 778, 722, 667, 611, 722, 667, 944, 667, 667, 611, 278, 278, 278, 469, 556,
+        333, 556, 556, 500, 556, 556, 278, 556, 556, 222, 222, 500, 222, 833, 556, 556,
+        556, 556, 333, 500, 278, 556, 500, 722, 500, 500, 500, 334, 260, 334, 584
+    };
 
     /// <inheritdoc />
     public void DrawImage(ReadOnlySpan<byte> imageData, double x, double y, double width, double height)
