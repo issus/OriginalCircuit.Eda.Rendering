@@ -378,9 +378,25 @@ public sealed class SvgRenderContext : IRenderContext
     {
         if (string.IsNullOrEmpty(text)) return;
 
+        // Match the raster backend's metric-based vertical positioning rather than relying on
+        // dominant-baseline keywords, which differ across SVG renderers and do not align with the
+        // (ascent + descent)/2 cap-box centre Skia uses. Estimate ascent/descent from the font size
+        // (ascent ~= 0.8*size, descent ~= 0.2*size, matching MeasureText's 1.16 line factor) and
+        // emit an explicit baseline y with dominant-baseline=auto so both backends register text
+        // at the same height.
+        const double ascentFactor = 0.8;
+        const double descentFactor = 0.2;
+        var baselineY = options.VerticalAlignment switch
+        {
+            TextVAlign.Top => y + ascentFactor * fontSize,
+            TextVAlign.Middle => y + (ascentFactor - descentFactor) / 2 * fontSize,
+            TextVAlign.Bottom => y - descentFactor * fontSize,
+            _ => y
+        };
+
         var el = new XElement("text",
             new XAttribute("x", Fmt(x)),
-            new XAttribute("y", Fmt(y)),
+            new XAttribute("y", Fmt(baselineY)),
             new XAttribute("font-size", Fmt(fontSize)),
             new XAttribute("font-family", options.FontFamily),
             new XAttribute("fill", ToSvgColor(color)));
@@ -395,13 +411,7 @@ public sealed class SvgRenderContext : IRenderContext
             _ => "start"
         }));
 
-        el.Add(new XAttribute("dominant-baseline", options.VerticalAlignment switch
-        {
-            TextVAlign.Top => "hanging",
-            TextVAlign.Middle => "central",
-            TextVAlign.Bottom => "text-after-edge",
-            _ => "auto"
-        }));
+        el.Add(new XAttribute("dominant-baseline", "auto"));
 
         AddOpacity(el, color);
         el.Add(text);
